@@ -15,4 +15,4 @@ The `cdk.json` file tells the CDK Toolkit how to execute your app.
 
 ## Environment variable
 
-- in create `lib/env.json` based on `lib/env.template.json`
+- create `lib/env.json` based on `lib/env.template.json`
