@@ -7,7 +7,7 @@ import { CognitoJwtVerifier } from "aws-jwt-verify";
  */
 const userPoolId = process.env.USER_POOL_ID || "";
 const appClientId = process.env.APPLICATION_CLIENT_ID || "";
-const adminGroupName = process.env.ADMIN_GROUP_NAME;
+const adminGroupName = process.env.ADMIN_GROUP_NAME || "";
 
 const HttpVerb = {
   GET: "GET",
@@ -267,9 +267,17 @@ export const handler = (
       policy.allowMethod(HttpVerb.DELETE, `/users/${principalId}`);
       policy.allowMethod(HttpVerb.DELETE, `/users/${principalId}/*`);
 
+      policy.allowMethod(HttpVerb.POST, "/menus");
+      policy.allowMethod(HttpVerb.POST, "/menus/*");
+      policy.allowMethod(HttpVerb.GET, "/menus");
+      policy.allowMethod(HttpVerb.GET, "/menus/*");
+      policy.allowMethod(HttpVerb.PUT, "/menus");
+      policy.allowMethod(HttpVerb.PUT, "/menus/*");
+
+
       // Look for admin group in Cognito groups
       // Assumption: admin group always has higher precedence
-      if (result["cognito:groups"] && result["cognito:groups"][0] === adminGroupName) {
+      if (result["cognito:groups"] && result["cognito:groups"].includes(adminGroupName)) {
         // add administrative privileges
         policy.allowMethod(HttpVerb.POST, "users");
         policy.allowMethod(HttpVerb.POST, "users/*");

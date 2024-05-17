@@ -6,6 +6,7 @@ import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as lambda_nodejs from "aws-cdk-lib/aws-lambda-nodejs";
 import * as fs from "fs";
+import * as logs from 'aws-cdk-lib/aws-logs';
 
 export class MenuManagementSystemStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
@@ -14,6 +15,7 @@ export class MenuManagementSystemStack extends Stack {
     const usersTable = new dynamodb.Table(this, "users-table", {
       tableName: `${Aws.STACK_NAME}-users`,
       partitionKey: { name: "userid", type: dynamodb.AttributeType.STRING },
+      sortKey: { name: "sk", type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: RemovalPolicy.DESTROY,
     });
@@ -46,6 +48,22 @@ export class MenuManagementSystemStack extends Stack {
       value: usersFunction.functionName,
     });
 
+    const menusFunction = new lambda_nodejs.NodejsFunction(this, "menus-function", {
+      entry: "./src/api/menus/index.ts",
+      handler: "handler",
+      ...nodejsFunctionProps,
+      environment: {
+        USERS_TABLE: usersTable.tableName,
+      },
+    });
+    usersTable.grantReadWriteData(menusFunction);
+    Tags.of(menusFunction).add("Stack", `${Aws.STACK_NAME}`);
+
+    new CfnOutput(this, "MenusFunction", {
+      description: "Lambda function used to perform actions on the menus data",
+      value: menusFunction.functionName,
+    });
+
     const authorizerFunction = new lambda_nodejs.NodejsFunction(this, "authorizer-function", {
       entry: "./src/api/authorizer/index.ts",
       handler: "handler",
@@ -57,11 +75,35 @@ export class MenuManagementSystemStack extends Stack {
       handler: authorizerFunction,
     });
 
+    const logGroup = new logs.LogGroup(this, 'api-access-logs', {
+      retention: logs.RetentionDays.ONE_MONTH,
+      logGroupName: `/${Aws.STACK_NAME}/ApiAccessLogs`,
+    });
+
     const api = new apigateway.RestApi(this, "users-api", {
       defaultMethodOptions: { authorizer },
+      cloudWatchRole: true,
       deployOptions: {
         stageName: "prod",
         tracingEnabled: true,
+        accessLogDestination: new apigateway.LogGroupLogDestination(logGroup),
+        accessLogFormat: apigateway.AccessLogFormat.jsonWithStandardFields({
+          ip: true,
+          caller: true,
+          user: true,
+          requestTime: true,
+          httpMethod: true,
+          resourcePath: true,
+          status: true,
+          protocol: true,
+          responseLength: true,
+        }),
+        methodOptions: {
+          '/*/*': {
+            loggingLevel: apigateway.MethodLoggingLevel.INFO,
+            dataTraceEnabled: true,
+          }
+        }
       },
     });
     Tags.of(api).add("Name", `${Aws.STACK_NAME}-api`);
@@ -80,6 +122,13 @@ export class MenuManagementSystemStack extends Stack {
     user.addMethod("DELETE", new apigateway.LambdaIntegration(usersFunction));
     user.addMethod("GET", new apigateway.LambdaIntegration(usersFunction));
     user.addMethod("PUT", new apigateway.LambdaIntegration(usersFunction));
+
+    const menus = api.root.addResource("menus");
+    menus.addMethod("GET", new apigateway.LambdaIntegration(menusFunction));
+    menus.addMethod("POST", new apigateway.LambdaIntegration(menusFunction));
+
+    const menu = menus.addResource("{menuid}");
+    menu.addMethod("PUT", new apigateway.LambdaIntegration(menusFunction));
 
     const userPool = new cognito.UserPool(this, "user-pool", {
       userPoolName: `${Aws.STACK_NAME}-user-pool`,
@@ -117,9 +166,9 @@ export class MenuManagementSystemStack extends Stack {
     const userPoolClientId = userPoolClient.userPoolClientId;
     authorizerFunction.addEnvironment('APPLICATION_CLIENT_ID', userPoolClientId);
 
-    userPool.addDomain("user-pool-domain", {
+    const userPoolDomain = userPool.addDomain("user-pool-domain", {
       cognitoDomain: {
-        domainPrefix: `${userPoolClientId}`,
+        domainPrefix: `menu`,
       },
     });
 
@@ -168,7 +217,7 @@ export class MenuManagementSystemStack extends Stack {
 
     new CfnOutput(this, "CognitoLoginURL", {
       description: "Cognito User Pool Application Client Hosted Login UI URL",
-      value: `https://${userPoolClientId}.auth.${Aws.REGION}.amazoncognito.com/login?client_id=${userPoolClientId}&response_type=code&redirect_uri=http://localhost`,
+      value: `https://menu.auth.${Aws.REGION}.amazoncognito.com/login?client_id=${userPoolClientId}&response_type=code&redirect_uri=http://localhost`,
     });
 
     new CfnOutput(this, "CognitoAuthCommand", {

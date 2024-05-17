@@ -1,0 +1,8 @@
+{
+  "resource": "/menus",
+  "path": "/menus",
+  "httpMethod": "GET",
+  "requestContext": {
+    "authorizer": { "principalId": "c4a8a4f8-40d1-707f-6e11-fd7c674f4d6c", "integrationLatency": 0 }
+  }
+}
